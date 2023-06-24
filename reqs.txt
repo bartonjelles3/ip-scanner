@@ -1,0 +1,13 @@
+Goal
+● Write a production-ready IP address scanning tool.
+Requirements
+● Takes a set of IP addresses as input and determines:
+○ which addresses are hosting IIS version 7.0.x or Nginx 1.2.x.
+○ which allow for a directing listing at the root of the website.
+
+Tips
+● Testing is encouraged.
+● The tool should be user friendly, well documented, and straightforward to install.
+● The tool handles unexpected execution issues including real world connectivity
+problems.
+● Uses standard programming idioms for the language it is written in.
