@@ -1,21 +1,14 @@
 import requests
-import utils
+from utils import WebSrvEnum, get_flagged_versions, DirListEnum, StatusEnum
 import logging
-import os
 import re
 from typing import Optional
 
-WEBSRVENUM = utils.WebServerSoftwareEnum
-WEBSRVVERS = utils.get_flagged_versions()
-DIRLISTENUM = utils.DirListingEnum
-STATUSENUM = utils.StatusEnum
 # Format for mapping IPs to requested info. Last item is for detailed status if error.
-IP_MAP_TYPE = dict[str, tuple[WEBSRVENUM, DIRLISTENUM, STATUSENUM, Optional[str]]]
+IP_MAP_TYPE = dict[str, tuple[WebSrvEnum, DirListEnum, StatusEnum, Optional[str]]]
 
 _ERROR_STATUS_MSG = 'Bad status... {}'
 _REQUEST_TIMEOUT = 3 # seconds
-
-ip = '127.0.0.1:8080'
 
 
 class WebServerScanner():
@@ -56,7 +49,7 @@ class WebServerScanner():
             try:
                 formatted_ip = self._format_and_validate_ip(ip)
             except ValueError:
-                self.ip_map[ip] = (WEBSRVENUM.err, DIRLISTENUM.err, STATUSENUM.bad_ip, None)
+                self.ip_map[ip] = (WebSrvEnum.err, DirListEnum.err, StatusEnum.bad_ip, None)
                 self._log_scan_complete(ip, success = False)
                 continue
             # Return formatted IP or original IP if preserve_ips
@@ -64,35 +57,26 @@ class WebServerScanner():
 
             # Make the request, check status
             try:
-                resp, status_code = self._make_request(formatted_ip)
-            except requests.exceptions.RequestException as e:
+                resp = self._make_request(formatted_ip)
+            except (requests.exceptions.RequestException, ValueError) as e:
                     self.ip_map[expected_ip] = (
-                                    WEBSRVENUM.err,
-                                    DIRLISTENUM.err,
-                                    STATUSENUM.bad_request,
+                                    WebSrvEnum.err,
+                                    DirListEnum.err,
+                                    StatusEnum.response_err,
                                     _ERROR_STATUS_MSG.format(e)
                                     )
                     self._log_scan_complete(expected_ip, success = False)
                     continue
-            if status_code != 200:
-                self.ip_map[expected_ip] = (
-                                WEBSRVENUM.err,
-                                DIRLISTENUM.err,
-                                STATUSENUM.bad_response_code,
-                                _ERROR_STATUS_MSG.format(status_code)
-                                )
-                self._log_scan_complete(expected_ip, success = False)
-                continue
     
             if self.scan_software:
                 srv_type = self._server_software(resp)
             else:
-                srv_type = WEBSRVENUM.disabled
+                srv_type = WebSrvEnum.disabled
             if self.scan_root:
-                root_listing = self._root_listing_avail(resp)
+                root_listing = self._root_listing(resp)
             else:
-                root_listing = DIRLISTENUM.disabled
-            self.ip_map[expected_ip] = (srv_type, root_listing, STATUSENUM.good, None)
+                root_listing = DirListEnum.disabled
+            self.ip_map[expected_ip] = (srv_type, root_listing, StatusEnum.good, None)
             self._log_scan_complete(expected_ip, success = True)
             
         return self.ip_map
@@ -111,52 +95,57 @@ class WebServerScanner():
         
         return ip
         
-    def _make_request(self, ip: str) -> tuple[requests.Response, int]:
+    def _make_request(self, ip: str) -> requests.Response:
         """Send GET HTTP request, return it and HTTP status code. Raises RequestException."""
         try:
+            # Redirects disabled so that we can properly check root dir later.
             logging.info(f'Sending GET request to {ip}.')
-            response = requests.get(ip, timeout=_REQUEST_TIMEOUT)
+            response = requests.get(ip, timeout=_REQUEST_TIMEOUT, allow_redirects=False)
         except requests.exceptions.RequestException as e:
-            logging.error(f'Got request exception: {e}.')
+            logging.error(f'Got exception: {e}.')
             raise e
+        if response.status_code != 200:
+            raise ValueError(f'Bad response code: {response.status_code}')
         logging.debug(f'Sent request to {ip}, got status {response.status_code}.')
         
-        return response, response.status_code
+        return response
         
-    def _server_software(self, resp: requests.Response) -> WEBSRVENUM:
+    def _server_software(self, resp: requests.Response) -> WebSrvEnum:
         """Check HTTP header server field and return the applicable enum if available."""
         # Sometimes server fields are removed from headers
         server_field = resp.headers.get('Server', None)
         if not server_field:
-            logging.info('No server field in HTTP header.')
-            return WEBSRVENUM.none
+            logging.debug('No server field in HTTP header.')
+            return WebSrvEnum.none
         logging.debug(f'HTTP "server" header field is set to: {server_field}')
 
         header_sw, header_ver = server_field.split('/')
         # If software and software version supported, return it. Else return "other"
         try:
-            software = WEBSRVENUM[header_sw.lower()]
-            logging.debug(f'{header_sw} is supported, checking version..')
+            software = WebSrvEnum[header_sw.lower()]
+            logging.debug(f'{header_sw} is flagged, checking version..')
         except ValueError:
-            logging.warning(f'"{header_sw}" is unsupported.')
-            return WEBSRVENUM.other
+            logging.debug(f'"{header_sw}" is not flagged.')
+            return WebSrvEnum.other
 
         # Check version. If type (above) and ver are supported, return its enum. Else other.
         # We only care about major, minor
         header_ver_major_minor = '.'.join(header_ver.split('.')[:2])
-        if header_ver_major_minor in WEBSRVVERS[software]:
-            logging.debug(f'{header_ver} is supported, returning {software}.')
+        logging.debug(f'Got {header_ver_major_minor} as version')
+        if header_ver_major_minor in get_flagged_versions()[software]:
+            logging.debug(f'Version flagged, returning {software}.')
             return software
-        return WEBSRVENUM.other
+        logging.debug(f'Version not flagged, returning {WebSrvEnum.other}')
+        return WebSrvEnum.other
     
-    def _root_listing_avail(self, resp: requests.Response) -> DIRLISTENUM:
+    def _root_listing(self, resp: requests.Response) -> DirListEnum:
         """Very rudimentary way of seeing if files are accessible at root."""
         if 'Index of' in resp.text:
             logging.debug('Directory listing at root appears to be available.')
-            return DIRLISTENUM.available
+            return DirListEnum.available
         else:
             logging.debug('Directory listing at root appears to be unavailable.')
-            return DIRLISTENUM.unavailable
+            return DirListEnum.unavailable
     
     def _log_scan_complete(self, ip: str, success: bool) -> None:
         """Log what was scanned."""
