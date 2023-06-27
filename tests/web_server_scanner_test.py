@@ -2,8 +2,8 @@ import unittest
 import unittest.mock
 import requests_mock
 import requests
-import web_server_scanner
-from utils import WebSrvEnum, get_flagged_versions, DirListEnum, StatusEnum
+from ..scanner.utils import WebSrvEnum, get_flagged_versions, DirListEnum, StatusEnum
+from ..scanner import web_server_scanner
 from typing import Optional
 import logging
 
@@ -91,9 +91,8 @@ class WebServerScannerTests(unittest.TestCase):
     def test_make_request_good_resp(self):
         mock_resp = create_mock_response()
         with unittest.mock.patch.object(requests, 'get', return_value=mock_resp):
-            resp, resp_status = WebServerScannerNoInit()._make_request(_FAKE_IP)
+            resp = WebServerScannerNoInit()._make_request(_FAKE_IP)
         self.assertEqual(resp.text, '')
-        self.assertEqual(resp_status, 200)
         
     def test_make_request_bad_resp(self):
         mock_resp = create_mock_response(404)
@@ -117,7 +116,7 @@ class WebServerScannerTests(unittest.TestCase):
                          DirListEnum.available)
 
     def test_root_listing_unavail(self):
-        mock_resp = create_mock_response(listing=True)
+        mock_resp = create_mock_response(listing=False)
         self.assertEqual(WebServerScannerNoInit()._root_listing(mock_resp),
                          DirListEnum.unavailable)
         

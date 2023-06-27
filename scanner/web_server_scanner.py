@@ -1,8 +1,9 @@
 import requests
-from scanner.utils import WebSrvEnum, get_flagged_versions, DirListEnum, StatusEnum
 import logging
 import re
 from typing import Optional
+
+from .utils import WebSrvEnum, get_flagged_versions, DirListEnum, StatusEnum
 
 # Format for mapping IPs to requested info. Last item is for detailed status if error.
 IP_MAP_TYPE = dict[str, tuple[WebSrvEnum, DirListEnum, StatusEnum, Optional[str]]]
