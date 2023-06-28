@@ -2,8 +2,8 @@ import unittest
 import unittest.mock
 import requests_mock
 import requests
-from ..scanner.utils import WebSrvEnum, get_flagged_versions, DirListEnum, StatusEnum
-from ..scanner import web_server_scanner
+from scanner import web_server_scanner
+from scanner.utils import WebSrvEnum, get_flagged_versions, DirListEnum, StatusEnum
 from typing import Optional
 import logging
 
@@ -45,35 +45,56 @@ class WebServerScannerTests(unittest.TestCase):
     def test_scanner(self):
         """Test WebServerScanner end-to-end with list of IPs."""
         # .1 has flagged web server and root listing available, .2 has neither.
-        mock_resp_1 = create_mock_response(listing=True, 
-                                           server_header=self.flagged_srv)
+        mock_resp_1 = create_mock_response(listing=True, server_header=self.flagged_srv)
         mock_resp_2 = create_mock_response()
         # .1 formatted with port number, .2 not.
         ips = ['http://192.168.0.1:8080', '192.168.0.2']
         responses = [mock_resp_1, mock_resp_2]
-        expected_1 = (WebSrvEnum.nginx, DirListEnum.available, StatusEnum.good, None)
-        expected_2 = (WebSrvEnum.none, DirListEnum.unavailable, StatusEnum.good, None)
+        expected_1 = {
+            'WebServerSoftware': WebSrvEnum.nginx,
+            'RootListing': DirListEnum.available,
+            'Status': StatusEnum.good,
+            'ErrorMsg': None
+        }
+        expected_2 = {
+            'WebServerSoftware': WebSrvEnum.none,
+            'RootListing': DirListEnum.unavailable,
+            'Status': StatusEnum.good,
+            'ErrorMsg': None
+        }
         expected_result = {ips[0]: expected_1, ips[1]: expected_2}
-        
+
         with unittest.mock.patch.object(requests, 'get', side_effect=responses):
             # Use the real WebServerScanner in this one.
-            self.assertDictEqual(web_server_scanner.WebServerScanner(ips, preserve_ips=True)(),
-                                 expected_result)
-            
+            result = web_server_scanner.WebServerScanner(ips, preserve_ips=True)()
+            self.assertDictEqual(dict(result), expected_result)
+
+
     def test_scanner_err(self):
         """Test WebServerScanner end-to-end with list of IPs with errors."""
         # For .2. .1 has a bad IP so no request will be made.
         mock_resp = requests.exceptions.ConnectTimeout
         # .1 is an invalid IP, .2 times out
         ips = ['0192.168.0.1', '192.168.0.2']
-        expected_1 = (WebSrvEnum.err, DirListEnum.err, StatusEnum.bad_ip, None)
-        expected_2 = (WebSrvEnum.err, DirListEnum.err, StatusEnum.response_err, web_server_scanner._ERROR_STATUS_MSG.format(''))
+        expected_1 = {
+            'WebServerSoftware': WebSrvEnum.err,
+            'RootListing': DirListEnum.err,
+            'Status': StatusEnum.bad_ip,
+            'ErrorMsg': 'Pass a valid IP.'
+        }
+        expected_2 = {
+            'WebServerSoftware': WebSrvEnum.err,
+            'RootListing': DirListEnum.err,
+            'Status': StatusEnum.response_err,
+            'ErrorMsg': web_server_scanner._ERROR_STATUS_MSG.format('')
+        }
         expected_result = {ips[0]: expected_1, ips[1]: expected_2}
-        
+
         with unittest.mock.patch.object(requests, 'get', side_effect=mock_resp):
             # Use the real WebServerScanner in this one.
-            self.assertDictEqual(web_server_scanner.WebServerScanner(ips, preserve_ips=True)(),
-                                 expected_result)
+            result = web_server_scanner.WebServerScanner(ips, preserve_ips=True)()
+            self.assertDictEqual(dict(result), expected_result)
+
             
     def test_format_ip(self):
         unformatted_ip = '127.0.0.1'

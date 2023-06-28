@@ -1,12 +1,15 @@
 import requests
 import logging
 import re
-from typing import Optional
+from typing import Optional, Union, Type
+from collections import defaultdict
 
-from .utils import WebSrvEnum, get_flagged_versions, DirListEnum, StatusEnum
+from utils import WebSrvEnum, get_flagged_versions, DirListEnum, StatusEnum
 
-# Format for mapping IPs to requested info. Last item is for detailed status if error.
-IP_MAP_TYPE = dict[str, tuple[WebSrvEnum, DirListEnum, StatusEnum, Optional[str]]]
+# Use a nested dict for easy JSON serialization. Last value is optional status msg.
+# {ip: {descriptor: enum, enum, enum, status}}
+IP_MAP_TYPE = defaultdict[str, dict[str, Union[Type[WebSrvEnum], Type[DirListEnum], Type[StatusEnum], Optional[str]]]]
+
 
 _ERROR_STATUS_MSG = 'Bad status... {}'
 _REQUEST_TIMEOUT = 3 # seconds
@@ -20,12 +23,15 @@ class WebServerScanner():
         self.scan_software = scan_software
         self.scan_root = scan_root
         self.preserve_ips = preserve_ips
-        self.ip_map: IP_MAP_TYPE = {}
+        self.ip_map: IP_MAP_TYPE = defaultdict(lambda: {'WebServerSoftware': WebSrvEnum,
+                                                        'RootListing': DirListEnum,
+                                                        'Status': StatusEnum,
+                                                        'ErrorMsg': None})
         logging.basicConfig(level=log_level)
         logging.debug(f'WebServerScanner() called with {locals()}.')
 
     def __call__(self) -> IP_MAP_TYPE:
-        """"Iterate over each IP, format, check for issues and status, return dict.
+        """"Iterates over each IP, format, check for issues and status, return dict.
             
             Main logic. If something is wrong where a server cannot be checked
             at all, 3 bad enums will be returned (for consistent types). Else,
@@ -50,7 +56,8 @@ class WebServerScanner():
             try:
                 formatted_ip = self._format_and_validate_ip(ip)
             except ValueError:
-                self.ip_map[ip] = (WebSrvEnum.err, DirListEnum.err, StatusEnum.bad_ip, None)
+                self._update_ip_map(ip, WebSrvEnum.err, DirListEnum.err,
+                                    StatusEnum.bad_ip, 'Pass a valid IP.')
                 self._log_scan_complete(ip, success = False)
                 continue
             # Return formatted IP or original IP if preserve_ips
@@ -60,12 +67,8 @@ class WebServerScanner():
             try:
                 resp = self._make_request(formatted_ip)
             except (requests.exceptions.RequestException, ValueError) as e:
-                    self.ip_map[expected_ip] = (
-                                    WebSrvEnum.err,
-                                    DirListEnum.err,
-                                    StatusEnum.response_err,
-                                    _ERROR_STATUS_MSG.format(e)
-                                    )
+                    self._update_ip_map(expected_ip, WebSrvEnum.err, DirListEnum.err,
+                                        StatusEnum.response_err, _ERROR_STATUS_MSG.format(e))
                     self._log_scan_complete(expected_ip, success = False)
                     continue
     
@@ -77,18 +80,19 @@ class WebServerScanner():
                 root_listing = self._root_listing(resp)
             else:
                 root_listing = DirListEnum.disabled
-            self.ip_map[expected_ip] = (srv_type, root_listing, StatusEnum.good, None)
+            self._update_ip_map(expected_ip, srv_type, root_listing,
+                                StatusEnum.good, None)
             self._log_scan_complete(expected_ip, success = True)
             
         return self.ip_map
     
     def _format_and_validate_ip(self, ip) -> str:
-        """Add http to IP if needed. Raises ValueError if invalid IP."""
+        """Adds http to IP if needed. Raises ValueError if invalid IP."""
         # requests expects an IP with http://
         if not ip.startswith(("http://", "https://")):
             logging.debug(f'{ip} did not start with http(s)://, adding.')
             ip = "http://" + ip
-        # Matches "http(s)://" prefix + IP address + optional port.
+        # Matches "http(s)://" prefix + IP address + optional port. No path.
         pattern = r'^(https?://)\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(?::\d{1,5})?$'
         if not re.match(pattern, ip):
             logging.error(f'{ip} is not valid.')
@@ -97,7 +101,7 @@ class WebServerScanner():
         return ip
         
     def _make_request(self, ip: str) -> requests.Response:
-        """Send GET HTTP request, return it and HTTP status code. Raises RequestException."""
+        """Sends GET HTTP request, return it and HTTP status code. Raises RequestException."""
         try:
             # Redirects disabled so that we can properly check root dir later.
             logging.info(f'Sending GET request to {ip}.')
@@ -112,7 +116,7 @@ class WebServerScanner():
         return response
         
     def _server_software(self, resp: requests.Response) -> WebSrvEnum:
-        """Check HTTP header server field and return the applicable enum if available."""
+        """Checks HTTP header server field and return the applicable enum if available."""
         # Sometimes server fields are removed from headers
         server_field = resp.headers.get('Server', None)
         if not server_field:
@@ -147,9 +151,18 @@ class WebServerScanner():
         else:
             logging.debug('Directory listing at root appears to be unavailable.')
             return DirListEnum.unavailable
+        
+    def _update_ip_map(self, ip: str, software: WebSrvEnum, root_listing: DirListEnum,
+                       status: StatusEnum, error_msg: Optional[str]) -> None:
+        """Updates the nested IP map."""
+        self.ip_map[ip]['WebServerSoftware'] = software
+        self.ip_map[ip]['RootListing'] = root_listing
+        self.ip_map[ip]['Status'] = status
+        self.ip_map[ip]['ErrorMsg'] = error_msg
+
     
     def _log_scan_complete(self, ip: str, success: bool) -> None:
-        """Log what was scanned."""
+        """Logs what was scanned."""
         if success == False:
             logging.warning(f'Unsuccessful scan complete: {self.ip_map[ip]}.')
         else:
