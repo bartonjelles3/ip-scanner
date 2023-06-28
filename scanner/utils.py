@@ -1,3 +1,4 @@
+"Utils for web_server_scanner. Provides enums and flagged versions."
 import enum
 
 NGINX_FLAGGED_VERSIONS = ('1.2',)

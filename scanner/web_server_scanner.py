@@ -1,3 +1,4 @@
+"Takes IPs, checks if server software and version are flagged, and root listing avail."
 import requests
 import logging
 import re

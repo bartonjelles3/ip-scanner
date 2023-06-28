@@ -1,3 +1,4 @@
+"Tests for scanner.web_server_scanner."
 import unittest
 import unittest.mock
 import requests_mock
