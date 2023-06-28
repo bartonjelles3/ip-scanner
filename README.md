@@ -1,6 +1,6 @@
 # IP Scanner
 
-A simple but extensible and robust IP scanning tool that checks a list of given IPs (via a CLI wrapper or WIP web UI and JSON API) and returns if a flagged version of NGINX or Microsoft IIS is running (version currently hard-coded to meet project requirements), and if a directory listing is available at root (/).
+A simple but extensible and robust IP scanning tool that checks a list of given IPs (via a CLI wrapper or WIP web UI and JSON API) and returns if a flagged version of nginx or Microsoft IIS is running (version currently hard-coded to meet project requirements), and if a directory listing is available at root (/).
 
 ## Limitations
 Only accepts a naked IP plus port, hostname plus potential path would be desirable. If the page tries to re-direct an exception will be raised, meaning the server software may not be able to be checked. This enforces checking of root but may cause issues if server software needs to be checked, regardless of path.
@@ -37,7 +37,7 @@ Error message: Bad status... HTTPConnectionPool(host='127.0.0.2', port=80): Max 
 You can also specify JSON output with --output-method. "HUMAN" (default) will only print error messages if applicable but JSON will do it always for consistent output. You can use the enums if you choose to parse the output, available in the repo at scanner/utils.py.
 
 ## Local usage and testing
-Clone the repo and install the dependencies (requests, termcolor, and requests_mock, requirements.txt incoming). Set $PYTHONPATH as needed. All tests can be ran with `python -m unittest discover -s tests -p '*test.py'`.
+Clone the repo and install the dependencies (requests, termcolor, and requests_mock, requirements.txt incoming). Set $PYTHONPATH as needed. Build CLI wrapper and scanner with `python3 -m build`. All tests can be ran with `python -m unittest discover -s tests -p '*test.py'`.
 
 ## Future work
 -Flask web UI and exposed RESTful API with Docker image.
